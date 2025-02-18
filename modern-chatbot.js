@@ -7,31 +7,6 @@
     { role: 'system', content: 'You are a helpful assistant who provides detailed answers.' }
   ];
 
-  // Load conversation from KV store
-  async function loadConversation() {
-    try {
-      const savedConvo = await puter.kv.get('chat_history');
-      if (savedConvo) {
-        conversation = JSON.parse(savedConvo);
-        if (conversation[0].role !== 'system') {
-          conversation.unshift({ role: 'system', content: 'You are a helpful assistant.' });
-        }
-        renderMessages();
-      }
-    } catch (error) {
-      console.error('Error loading conversation:', error);
-    }
-  }
-
-  // Save conversation to KV store
-  async function saveConversation() {
-    try {
-      await puter.kv.set('chat_history', JSON.stringify(conversation));
-    } catch (error) {
-      console.error('Error saving conversation:', error);
-    }
-  }
-
   function renderMessage(message, type) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}-message`;
@@ -69,29 +44,40 @@
     userMessageInput.disabled = true;
     loadingSpinner.style.display = 'block';
 
-    conversation.push({ role: 'user', content: userText });
-    renderMessages();
+    async function processMessage() {
+      if (!puter.auth.isSignedIn()) {
+        try {
+          await puter.auth.signIn();
+        } catch (error) {
+          console.error('Authentication failed:', error);
+          renderMessage('Authentication failed. Please try again.', 'error');
+          return;
+        }
+      }
 
-    saveConversation(); // Save conversation after each user message
+      conversation.push({ role: 'user', content: userText });
+      saveConversation();
+      renderMessages();
 
-    puter.ai.chat(conversation, { model: 'gpt-4o-mini' })
-      .then((response) => {
+      try {
+        const response = await puter.ai.chat(conversation, { model: 'gpt-4o-mini' });
         const aiMessage = response.message.content;
         conversation.push({ role: 'assistant', content: aiMessage });
-        saveConversation(); // Save after AI response
+        saveConversation();
         renderMessages();
-      })
-      .catch((error) => {
+      } catch (error) {
         const errorMessage = `Error: ${error.message}`;
         renderMessage(errorMessage, 'error');
         console.error(error);
-      })
-      .finally(() => {
+      } finally {
         userMessageInput.value = '';
         userMessageInput.disabled = false;
         sendMessageButton.disabled = false;
         loadingSpinner.style.display = 'none';
-      });
+      }
+    }
+
+    processMessage();
   }
 
   async function handleImageRequest(prompt) {
@@ -101,14 +87,14 @@
     loadingSpinner.style.display = 'block';
 
     try {
-      const imageUrl = await puter.ai.txt2img(imagePrompt, true); // Use test mode for demonstration
+      const imageUrl = await puter.ai.txt2img(imagePrompt, true);
       const imageDiv = document.createElement('div');
       imageDiv.className = 'message ai-message';
       imageDiv.innerHTML = `<img src="${imageUrl}" style="max-width: 100%; max-height: 300px; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.1);">`;
       chatMessages.appendChild(imageDiv);
       chatMessages.scrollTop = chatMessages.scrollHeight;
     } catch (error) {
-      console.error(error);
+      console.error('Image generation failed:', error);
       renderMessage('Image generation failed.', 'error');
     } finally {
       userMessageInput.value = '';
@@ -118,12 +104,26 @@
     }
   }
 
-  // Load initial messages
-  const initialMessages = [
-    { role: 'assistant', content: "Hello! I'm your friendly AI assistant. How can I help you today?" }
-  ];
-  conversation.push(...initialMessages);
-  renderMessages();
+  function saveConversation() {
+    puter.kv.set('chat_history', JSON.stringify(conversation))
+      .catch(error => console.error('Error saving conversation:', error));
+  }
+
+  function loadConversation() {
+    puter.kv.get('chat_history')
+      .then(savedConvo => {
+        if (savedConvo) {
+          conversation = JSON.parse(savedConvo);
+          if (conversation[0].role !== 'system') {
+            conversation.unshift({ role: 'system', content: 'You are a helpful assistant.' });
+          }
+          renderMessages();
+        }
+      })
+      .catch(error => console.error('Error loading conversation:', error));
+  }
+
+  loadConversation();
 
   sendMessageButton.addEventListener('click', handleNewMessage);
   userMessageInput.addEventListener('keypress', (e) => {
@@ -134,17 +134,16 @@
     }
   });
 
-  // Load conversation from KV store on page load
-  loadConversation();
-
-  // Handle image generation command
   userMessageInput.addEventListener('input', () => {
-    if (userMessageInput.value.startsWith('/img ')) {
-      // Prevent standard message handling and use image generation
-      userMessageInput.value = userMessageInput.value.replace(/\n/g, '');
-      handleImageRequest(userMessageInput.value.replace('/img ', '').trim());
+    const message = userMessageInput.value.trim();
+    if (message.startsWith('/img ')) {
+      handleImageRequest(message.replace('/img ', ''));
     }
   });
+
+  // Render initial messages
+  conversation.push({ role: 'assistant', content: "Hello! I'm your friendly AI assistant. How can I help you today?" });
+  renderMessages();
 
   // Responsive adjustments
   window.addEventListener('resize', () => {
