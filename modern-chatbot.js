@@ -11,14 +11,13 @@
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}-message`;
 
-    // Parse message for formatting
     const formattedMessage = message
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Bold text
-      .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; max-height: 300px;">') // Image URLs
-      .replace(/\n/g, '<br>') // New lines
-      .replace(/\[LEFT\](.*?)\[\/LEFT\]/g, '<div style="text-align: left;">$1</div>') // Left alignment
-      .replace(/\[CENTER\](.*?)\[\/CENTER\]/g, '<div style="text-align: center;">$1</div>') // Center alignment
-      .replace(/\[RIGHT\](.*?)\[\/RIGHT\]/g, '<div style="text-align: right;">$1</div>'); // Right alignment
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" style="max-width: 100%; max-height: 300px;">')
+      .replace(/\n/g, '<br>')
+      .replace(/\[LEFT\](.*?)\[\/LEFT\]/g, '<div style="text-align: left;">$1</div>')
+      .replace(/\[CENTER\](.*?)\[\/CENTER\]/g, '<div style="text-align: center;">$1</div>')
+      .replace(/\[RIGHT\](.*?)\[\/RIGHT\]/g, '<div style="text-align: right;">$1</div>');
 
     messageDiv.innerHTML = formattedMessage;
     chatMessages.appendChild(messageDiv);
@@ -47,7 +46,7 @@
     async function processMessage() {
       if (!puter.auth.isSignedIn()) {
         try {
-          await puter.auth.signIn();
+          await puter.ui.authenticateWithPuter(); // Use UI-based authentication
         } catch (error) {
           console.error('Authentication failed:', error);
           renderMessage('Authentication failed. Please try again.', 'error');
@@ -80,30 +79,6 @@
     processMessage();
   }
 
-  async function handleImageRequest(prompt) {
-    const imagePrompt = prompt.trim();
-    sendMessageButton.disabled = true;
-    userMessageInput.disabled = true;
-    loadingSpinner.style.display = 'block';
-
-    try {
-      const imageUrl = await puter.ai.txt2img(imagePrompt, true);
-      const imageDiv = document.createElement('div');
-      imageDiv.className = 'message ai-message';
-      imageDiv.innerHTML = `<img src="${imageUrl}" style="max-width: 100%; max-height: 300px; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.1);">`;
-      chatMessages.appendChild(imageDiv);
-      chatMessages.scrollTop = chatMessages.scrollHeight;
-    } catch (error) {
-      console.error('Image generation failed:', error);
-      renderMessage('Image generation failed.', 'error');
-    } finally {
-      userMessageInput.value = '';
-      userMessageInput.disabled = false;
-      sendMessageButton.disabled = false;
-      loadingSpinner.style.display = 'none';
-    }
-  }
-
   function saveConversation() {
     puter.kv.set('chat_history', JSON.stringify(conversation))
       .catch(error => console.error('Error saving conversation:', error));
@@ -131,13 +106,6 @@
       handleNewMessage();
     } else if (e.key === '/') { // Image generation command
       userMessageInput.value = '/img ';
-    }
-  });
-
-  userMessageInput.addEventListener('input', () => {
-    const message = userMessageInput.value.trim();
-    if (message.startsWith('/img ')) {
-      handleImageRequest(message.replace('/img ', ''));
     }
   });
 
